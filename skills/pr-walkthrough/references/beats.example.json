@@ -1,0 +1,26 @@
+{
+  "title": "CWB-XXXX título corto",
+  "language": "es",
+  "slug": "cwb-xxxx-titulo-corto",
+  "start_url": "http://localhost:3000/path",
+  "beats": [
+    {
+      "id": "01",
+      "narration": "Estamos en la pantalla X. Esto es el estado inicial.",
+      "action": "Navigate to start_url and wait until the main heading is visible.",
+      "play": { "do": "goto" }
+    },
+    {
+      "id": "02",
+      "narration": "Hago click en Y. Aquí se dispara el bug: Z.",
+      "action": "Click the Y control. Wait until the error/state is visible.",
+      "play": { "do": "click", "selector": "[data-testid='y']", "text": "Y" }
+    },
+    {
+      "id": "03",
+      "narration": "El fix hace que ahora W. Fin del recorrido.",
+      "action": "Show the post-fix state or the relevant code outcome on screen.",
+      "play": { "do": "wait" }
+    }
+  ]
+}

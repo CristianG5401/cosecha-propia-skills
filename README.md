@@ -9,16 +9,41 @@ Construidas siguiendo el estandar de [skills.sh](https://skills.sh).
 | Skill | Descripcion |
 |-------|-------------|
 | [no-sycophancy](skills/no-sycophancy/SKILL.md) | Elimina comportamiento adulador: sin elogios vacios, sin disculpas excesivas, sin rodeos innecesarios. Se activa bajo demanda con `/no-sycophancy`. |
+| [pr-walkthrough](skills/pr-walkthrough/SKILL.md) | Screencast narrado de un PR o demo: Playwright graba, Fish Audio TTS narra en español, ffmpeg muxea a MP4 y opcionalmente se adjunta al PR. |
 
 ## Instalacion
 
-Instala cualquier skill usando el CLI de [skills.sh](https://skills.sh/docs):
+Usa el CLI de [skills.sh](https://skills.sh) (`npx skills`). Por defecto **enlaza** (symlink) las skills al agente: una sola copia, sin duplicar archivos. Pasa `--copy` solo si el entorno no soporta enlaces simbolicos.
 
 ```bash
+# Instala el pack (interactivo: elige skills y agentes)
 npx skills add CristianG5401/cosecha-propia-skills
+
+# Lista las skills del repo sin instalar
+npx skills add CristianG5401/cosecha-propia-skills --list
+
+# Una skill concreta, global, en un agente
+npx skills add CristianG5401/cosecha-propia-skills --skill pr-walkthrough -g -a grok -y
+
+# Desde un clone local (el enlace apunta a este repo)
+npx skills add . --skill pr-walkthrough -g -a grok -y
 ```
 
-Esto instalara las skills y las hara disponibles en tu agente de IA.
+Flags utiles: `-g` global (`~/.<agente>/skills/`), `-a` agente (`grok`, `claude-code`, `cursor`, …), `-s`/`--skill` nombre, `-y` sin prompts, `--all` todo a todos los agentes.
+
+```bash
+npx skills list          # instaladas
+npx skills update        # actualizar
+npx skills remove <name> # quitar
+```
+
+`pr-walkthrough` trae scripts Node. Tras instalarla:
+
+```bash
+cd skills/pr-walkthrough && npm install
+```
+
+Tambien hace falta `ffmpeg` / `ffprobe` en el PATH y Fish Audio MCP (o `FISH_API_KEY`).
 
 ## Estructura del Proyecto
 
@@ -26,7 +51,9 @@ Esto instalara las skills y las hara disponibles en tu agente de IA.
 cosecha-propia-skills/
 └── skills/
     └── <nombre-skill>/
-        └── SKILL.md
+        ├── SKILL.md
+        ├── scripts/      # opcional
+        └── references/   # opcional
 ```
 
 Cada `SKILL.md` sigue este formato:
