@@ -13,10 +13,10 @@ Construidas siguiendo el estandar de [skills.sh](https://skills.sh).
 
 ## Instalacion
 
-Usa el CLI de [skills.sh](https://skills.sh) (`npx skills`). Por defecto **enlaza** (symlink) las skills al agente: una sola copia, sin duplicar archivos. Pasa `--copy` solo si el entorno no soporta enlaces simbolicos.
+Usa el CLI de [skills.sh](https://skills.sh) (`npx skills`). En modo interactivo elige **Symlink** (recomendado: una sola copia) o **Copy**. `--copy` fuerza copia. `-y` (sin prompts) puede copiar; si ya tienes este repo clonado, enlaza a mano al directorio de skills del agente.
 
 ```bash
-# Instala el pack (interactivo: elige skills y agentes)
+# Instala el pack (interactivo: elige skills, agentes y symlink vs copy)
 npx skills add CristianG5401/cosecha-propia-skills
 
 # Lista las skills del repo sin instalar
@@ -25,8 +25,8 @@ npx skills add CristianG5401/cosecha-propia-skills --list
 # Una skill concreta, global, en un agente
 npx skills add CristianG5401/cosecha-propia-skills --skill pr-walkthrough -g -a grok -y
 
-# Desde un clone local (el enlace apunta a este repo)
-npx skills add . --skill pr-walkthrough -g -a grok -y
+# Clone local: el enlace apunta a este repo (sin duplicar)
+ln -sfn "$(pwd)/skills/pr-walkthrough" ~/.grok/skills/pr-walkthrough
 ```
 
 Flags utiles: `-g` global (`~/.<agente>/skills/`), `-a` agente (`grok`, `claude-code`, `cursor`, …), `-s`/`--skill` nombre, `-y` sin prompts, `--all` todo a todos los agentes.
