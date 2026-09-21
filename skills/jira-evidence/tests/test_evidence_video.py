@@ -100,6 +100,23 @@ class EvidenceVideoTests(unittest.TestCase):
         self.compose(title=title)
         self.assertTrue(self.output.is_file())
 
+    def test_render_card_preserves_both_horizontal_card_borders(self):
+        card = Path(self.temp_dir.name) / "card.svg"
+        output = Path(self.temp_dir.name) / "card.png"
+        self.module.write_card_svg(card, "AC-1", ["Expected: Playback begins"])
+        self.module.render_card(card, output, Path(self.temp_dir.name))
+
+        def pixel_at(x, y):
+            return subprocess.check_output([
+                "ffmpeg", "-v", "error", "-i", str(output), "-vf",
+                f"crop=1:1:{x}:{y}", "-frames:v", "1", "-f", "rawvideo",
+                "-pix_fmt", "rgb24", "-",
+            ])
+
+        left, right = pixel_at(180, 540), pixel_at(1740, 540)
+        self.assertGreater(left[2], 120, "left blue card border should be visible")
+        self.assertGreater(right[2], 120, "right blue card border should be visible")
+
     def test_validate_accepts_composed_video(self):
         self.compose()
         report = json.loads(self.run_cli("validate", "--video", str(self.output)).stdout)

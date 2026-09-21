@@ -137,7 +137,7 @@ def write_card_svg(path, heading, lines):
     for index, line in enumerate(lines):
         body += svg_text(line, 470 + index * 125, 42)
     path.write_text(
-        '<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">'
+        '<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1920" viewBox="0 0 1920 1920">'
         '<rect width="1920" height="1080" fill="#111827"/>'
         '<rect x="180" y="180" width="1560" height="720" rx="24" fill="#1f2937" stroke="#3b82f6" stroke-width="4"/>'
         f"{body}</svg>",
