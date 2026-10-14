@@ -54,7 +54,7 @@ class EvidenceVideoTests(unittest.TestCase):
             "compose", "--raw", str(self.raw), "--output", str(self.output),
             "--title", title, "--expected", "Playback begins",
             "--result", "PASS", "--observed", "Started within one second",
-            "--start", "0.5", "--end", "2.5", "--redact", "0:4:0:0:200:200",
+            "--start", "0.5", "--end", "2.5",
         )
 
     def test_inspect_writes_metadata_frames_and_contact_sheet(self):
@@ -65,7 +65,7 @@ class EvidenceVideoTests(unittest.TestCase):
         for name in ("metadata.json", "first-frame.png", "last-frame.png", "contact-sheet.jpg"):
             self.assertTrue((self.workdir / name).is_file(), name)
 
-    def test_compose_trims_adds_cards_and_redacts_requested_source_rectangle(self):
+    def test_compose_trims_adds_cards_and_keeps_recorded_content(self):
         self.compose()
         self.assertTrue(self.output.is_file())
         probe = self.module.probe_video(self.output)
@@ -80,7 +80,18 @@ class EvidenceVideoTests(unittest.TestCase):
             "ffmpeg", "-v", "error", "-i", str(frame), "-vf", "crop=1:1:300:300",
             "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgb24", "-",
         ])
-        self.assertLess(max(pixel), 20, "approved redaction should be black")
+        self.assertGreater(pixel[0], 200, "recorded red content should be preserved")
+        self.assertLess(max(pixel[1:]), 60, "recorded red content should be preserved")
+
+    def test_compose_has_no_redaction_option(self):
+        result = self.run_cli(
+            "compose", "--raw", str(self.raw), "--output", str(self.output),
+            "--title", "AC", "--expected", "Expected", "--result", "PASS",
+            "--observed", "Observed", "--start", "0", "--end", "1",
+            "--redact", "0:1:0:0:10:10", expected_returncode=2,
+        )
+        self.assertIn("unrecognized arguments: --redact", result.stderr)
+        self.assertFalse(self.output.exists())
 
     def test_compose_refuses_existing_output(self):
         self.output.write_bytes(b"keep me")

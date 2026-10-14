@@ -19,21 +19,19 @@ Keep one AC per row. Honor state dependencies: evidence for a later state follow
 
 ## Video evidence
 
-Before any compose operation, inspect each user-provided raw clip:
+Inspect each user-provided raw clip to choose the trim range; use its duration, first/last frames, and contact sheet to find where the AC's visible behavior starts and ends:
 
 ```bash
 python3 <skill-dir>/scripts/evidence_video.py inspect --raw raw/AC-1.mp4 --workdir inspection/AC-1
 ```
 
-Review the raw and its first/last frames/contact sheet for sensitive data. If any is suspected, **stop**. Ask the user to choose **crop**, **redact**, or **re-record**. Never decide, infer approval, or process sensitive raw first.
-
-After the user approves the AC and any redaction, compose one short clip. The command creates two-second opening/closing cards, trims the approved range, preserves aspect ratio in a padded 1920×1080 frame, outputs 30 fps H.264/yuv420p/faststart without audio, and atomically moves the output only after validation. `--redact` is an approved timed black box in raw source coordinates.
+After the user approves the AC, compose one short clip. The command creates two-second opening/closing cards, trims the approved range, preserves aspect ratio in a padded 1920×1080 frame, outputs 30 fps H.264/yuv420p/faststart without audio, and atomically moves the output only after validation.
 
 ```bash
 python3 <skill-dir>/scripts/evidence_video.py compose \
   --raw raw/AC-1.mp4 --output AC-1.mp4 --title "AC-1: profile opens" \
   --expected "Profile screen appears" --result PASS --observed "Visible after selection" \
-  --start 12 --end 34 --redact 14:18:120:80:420:90
+  --start 12 --end 34
 python3 <skill-dir>/scripts/evidence_video.py validate --video AC-1.mp4
 ```
 
@@ -46,5 +44,4 @@ Update the approved matrix as each AC is complete. `PASS`, `FAIL`, `PARTIAL`, an
 ## Common mistakes
 
 - Do not make video for an AC that a command or source reference proves better.
-- Do not process a sensitive clip before the user makes an explicit choice.
 - Do not reorder dependent state or overwrite an evidence file.

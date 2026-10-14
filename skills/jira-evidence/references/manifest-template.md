@@ -12,6 +12,6 @@ Scope: <one sentence>
 
 ## Notes
 
-- Record redaction approval, crop/re-record decision, or known limitation here.
+- Record known limitations here.
 - Keep technical test output concise and include enough command context to rerun it.
 - `FAIL`, `PARTIAL`, and `BLOCKED` state the observed result and blocker; do not relabel them as `PASS`.

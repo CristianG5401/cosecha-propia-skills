@@ -159,18 +159,6 @@ def render_card(svg, output, tempdir):
     ])
 
 
-def parse_redaction(value, raw_width, raw_height):
-    try:
-        start, end, x, y, width, height = (float(part) for part in value.split(":"))
-    except ValueError as error:
-        raise EvidenceError("--redact must be START:END:X:Y:W:H") from error
-    if start < 0 or end <= start or x < 0 or y < 0 or width <= 0 or height <= 0:
-        raise EvidenceError("--redact values must be positive, with END after START")
-    if x + width > raw_width or y + height > raw_height:
-        raise EvidenceError("--redact rectangle must fit within raw source dimensions")
-    return start, end, x, y, width, height
-
-
 def compose(args):
     raw = Path(args.raw).expanduser().resolve()
     output = Path(args.output).expanduser().resolve()
@@ -181,13 +169,6 @@ def compose(args):
     raw_report = probe_video(raw)
     if args.start < 0 or args.end > raw_report["duration"]:
         raise EvidenceError("trim range must be within the raw video duration")
-    redact_filter = ""
-    if args.redact:
-        start, end, x, y, width, height = parse_redaction(args.redact, raw_report["width"], raw_report["height"])
-        redact_filter = (
-            f"drawbox=x={x}:y={y}:w={width}:h={height}:color=black:t=fill:"
-            f"enable='between(t,{start},{end})',"
-        )
     output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="jira-evidence-", dir=output.parent) as tmp:
         tempdir = Path(tmp)
@@ -198,7 +179,7 @@ def compose(args):
         render_card(opening_svg, opening_png, tempdir)
         render_card(closing_svg, closing_png, tempdir)
         body = (
-            f"{redact_filter}trim=start={args.start}:end={args.end},setpts=PTS-STARTPTS,"
+            f"trim=start={args.start}:end={args.end},setpts=PTS-STARTPTS,"
             "fps=30,scale=1920:1080:force_original_aspect_ratio=decrease,"
             "pad=1920:1080:(ow-iw)/2:(oh-ih)/2,format=yuv420p"
         )
@@ -259,7 +240,6 @@ def parser():
     compose_parser.add_argument("--observed", required=True)
     compose_parser.add_argument("--start", required=True, type=float)
     compose_parser.add_argument("--end", required=True, type=float)
-    compose_parser.add_argument("--redact")
     compose_parser.set_defaults(func=compose)
     validate_parser = commands.add_parser("validate")
     validate_parser.add_argument("--video", required=True)
