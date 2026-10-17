@@ -14,6 +14,10 @@ import textwrap
 from pathlib import Path
 
 
+CARD_SECONDS = 2.0
+SHEET_TILES = 8
+
+
 class EvidenceError(Exception):
     """A clean, actionable command failure."""
 
@@ -25,9 +29,9 @@ def tool(name):
     return path
 
 
-def run(args, *, text=True):
+def run(args, *, text=True, cwd=None):
     try:
-        return subprocess.run(args, check=True, capture_output=True, text=text)
+        return subprocess.run(args, check=True, capture_output=True, text=text, cwd=cwd)
     except subprocess.CalledProcessError as error:
         detail = error.stderr.decode(errors="replace") if isinstance(error.stderr, bytes) else error.stderr
         raise EvidenceError(f"command failed ({Path(args[0]).name}): {detail.strip()[-1000:]}") from error
@@ -185,8 +189,8 @@ def compose(args):
         )
         temp_output = tempdir / "output.mp4"
         run([
-            tool("ffmpeg"), "-v", "error", "-loop", "1", "-t", "2", "-i", str(opening_png),
-            "-i", str(raw), "-loop", "1", "-t", "2", "-i", str(closing_png), "-filter_complex",
+            tool("ffmpeg"), "-v", "error", "-loop", "1", "-t", str(CARD_SECONDS), "-i", str(opening_png),
+            "-i", str(raw), "-loop", "1", "-t", str(CARD_SECONDS), "-i", str(closing_png), "-filter_complex",
             f"[0:v]fps=30,format=yuv420p[open];[1:v]{body}[body];[2:v]fps=30,format=yuv420p[close];"
             "[open][body][close]concat=n=3:v=1:a=0[video]",
             "-map", "[video]", "-an", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-r", "30",
@@ -220,8 +224,34 @@ def validate_video(video):
     }
 
 
+def write_sheet(video, sheet, duration):
+    """Tile evenly spaced frames of the recording, ending just before the closing card."""
+    sheet = Path(sheet).expanduser().resolve()
+    require_absent(sheet)
+    last = duration - CARD_SECONDS - 0.1
+    if last <= CARD_SECONDS:
+        raise EvidenceError("no recording between the opening and closing cards")
+    seconds = [round(CARD_SECONDS + (last - CARD_SECONDS) * index / (SHEET_TILES - 1), 3) for index in range(SHEET_TILES)]
+    sheet.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="jira-evidence-sheet-", dir=sheet.parent) as tmp:
+        tempdir = Path(tmp)
+        for index, second in enumerate(seconds):
+            run([
+                tool("ffmpeg"), "-v", "error", "-ss", f"{second:.3f}", "-i", str(video),
+                "-frames:v", "1", "-vf", "scale=480:-2", f"tile-{index:02d}.png",
+            ], cwd=tempdir)
+        run([
+            tool("ffmpeg"), "-v", "error", "-i", "tile-%02d.png", "-vf", "tile=4x2:padding=8:margin=8",
+            "-frames:v", "1", "sheet.jpg",
+        ], cwd=tempdir)
+        os.replace(tempdir / "sheet.jpg", sheet)
+    return sheet, seconds
+
+
 def validate(args):
-    print(json.dumps(validate_video(args.video), indent=2))
+    report = validate_video(args.video)
+    sheet, seconds = write_sheet(Path(args.video).expanduser().resolve(), args.sheet, report["duration"])
+    print(json.dumps(report | {"sheet": str(sheet), "sheet_seconds": seconds}, indent=2))
 
 
 def parser():
@@ -243,6 +273,7 @@ def parser():
     compose_parser.set_defaults(func=compose)
     validate_parser = commands.add_parser("validate")
     validate_parser.add_argument("--video", required=True)
+    validate_parser.add_argument("--sheet", required=True, help="new image to write: frames of the recording between the cards")
     validate_parser.set_defaults(func=validate)
     return result
 

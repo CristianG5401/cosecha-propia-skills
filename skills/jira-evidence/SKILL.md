@@ -32,8 +32,10 @@ python3 <skill-dir>/scripts/evidence_video.py compose \
   --raw raw/AC-1.mp4 --output AC-1.mp4 --title "AC-1: profile opens" \
   --expected "Profile screen appears" --result PASS --observed "Visible after selection" \
   --start 12 --end 34
-python3 <skill-dir>/scripts/evidence_video.py validate --video AC-1.mp4
+python3 <skill-dir>/scripts/evidence_video.py validate --video AC-1.mp4 --sheet inspection/AC-1/final-sheet.jpg
 ```
+
+`validate` writes a contact sheet of the composed clip's recording, ending just before the closing card. Open it and confirm its last tiles show the guide's **Reviewer must see** result; if they do not, re-compose with a new output name and adjusted `--start`/`--end`. Mark the AC `PASS` only after that check, and paste the exact `compose` command into the manifest.
 
 The helper needs macOS `qlmanage`, `ffmpeg`, `ffprobe`, and `libx264`. It refuses output overwrite, preserves inputs on failure, and warns when final runtime falls outside 20–60 seconds.
 

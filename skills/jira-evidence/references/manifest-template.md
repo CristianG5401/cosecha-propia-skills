@@ -15,3 +15,12 @@ Scope: <one sentence>
 - Record known limitations here.
 - Keep technical test output concise and include enough command context to rerun it.
 - `FAIL`, `PARTIAL`, and `BLOCKED` state the observed result and blocker; do not relabel them as `PASS`.
+
+## Compose commands
+
+The exact command behind each `VIDEO` artifact, so it can be rebuilt with a different trim:
+
+```bash
+# AC-1
+python3 <skill-dir>/scripts/evidence_video.py compose --raw raw/AC-1.mp4 --output AC-1.mp4 ...
+```

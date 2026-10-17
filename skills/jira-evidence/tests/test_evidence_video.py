@@ -130,21 +130,76 @@ class EvidenceVideoTests(unittest.TestCase):
 
     def test_validate_accepts_composed_video(self):
         self.compose()
-        report = json.loads(self.run_cli("validate", "--video", str(self.output)).stdout)
+        sheet = Path(self.temp_dir.name) / "final-sheet.jpg"
+        report = json.loads(self.run_cli("validate", "--video", str(self.output), "--sheet", str(sheet)).stdout)
         self.assertEqual(report["codec"], "h264")
         self.assertEqual(report["audio_streams"], 0)
         self.assertEqual(len(report["sha256"]), 64)
+        self.assertEqual(report["sheet"], str(sheet.resolve()))
+
+    def test_validate_sheet_tiles_the_recording_up_to_the_closing_card(self):
+        self.run_ffmpeg(
+            "-f", "lavfi", "-i", "color=c=red:s=640x360:r=30:d=3",
+            "-f", "lavfi", "-i", "color=c=green:s=640x360:r=30:d=1",
+            "-filter_complex", "[0:v][1:v]concat=n=2:v=1[v]", "-map", "[v]",
+            "-c:v", "libx264", "-pix_fmt", "yuv420p", "-an", str(self.raw),
+        )
+        self.run_cli(
+            "compose", "--raw", str(self.raw), "--output", str(self.output),
+            "--title", "AC", "--expected", "Expected", "--result", "PASS",
+            "--observed", "Observed", "--start", "0.5", "--end", "3.5",
+        )
+        sheet = Path(self.temp_dir.name) / "final-sheet.jpg"
+        report = json.loads(self.run_cli("validate", "--video", str(self.output), "--sheet", str(sheet)).stdout)
+        self.assertEqual(len(report["sheet_seconds"]), 8)
+        self.assertGreaterEqual(report["sheet_seconds"][0], 2.0)
+        self.assertLess(report["sheet_seconds"][-1], report["duration"] - 2.0)
+        probe = self.module.ffprobe_json(sheet)["streams"][0]
+        self.assertEqual((probe["width"], probe["height"]), (1960, 564))
+
+        def tile_color(column, row):
+            x, y = 8 + column * 488 + 240, 8 + row * 278 + 135
+            return subprocess.check_output([
+                "ffmpeg", "-v", "error", "-i", str(sheet), "-vf", f"crop=1:1:{x}:{y}",
+                "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgb24", "-",
+            ])
+
+        first, last = tile_color(0, 0), tile_color(3, 1)
+        self.assertGreater(first[0], 180, "first tile should show the recording, not the opening card")
+        self.assertLess(first[1], 80)
+        self.assertGreater(last[1], 100, "last tile should show the final recorded state")
+        self.assertLess(last[0], 80)
+
+    def test_validate_refuses_existing_sheet_and_requires_sheet_path(self):
+        self.compose()
+        sheet = Path(self.temp_dir.name) / "final-sheet.jpg"
+        sheet.write_bytes(b"keep me")
+        self.run_cli("validate", "--video", str(self.output), "--sheet", str(sheet), expected_returncode=1)
+        self.assertEqual(sheet.read_bytes(), b"keep me")
+        self.run_cli("validate", "--video", str(self.output), expected_returncode=2)
+
+    def test_validate_rejects_video_without_recording_between_cards(self):
+        short = Path(self.temp_dir.name) / "short.mp4"
+        self.run_ffmpeg(
+            "-f", "lavfi", "-i", "color=c=blue:s=1920x1080:r=30:d=3",
+            "-c:v", "libx264", "-pix_fmt", "yuv420p", "-an", str(short),
+        )
+        sheet = Path(self.temp_dir.name) / "short-sheet.jpg"
+        result = self.run_cli("validate", "--video", str(short), "--sheet", str(sheet), expected_returncode=1)
+        self.assertIn("no recording between the opening and closing cards", result.stderr)
+        self.assertFalse(sheet.exists())
 
     def test_validate_rejects_invalid_and_corrupt_video(self):
+        sheet = Path(self.temp_dir.name) / "sheet.jpg"
         invalid = Path(self.temp_dir.name) / "small.mp4"
         self.run_ffmpeg(
             "-f", "lavfi", "-i", "color=c=blue:s=640x360:r=30:d=1",
             "-c:v", "libx264", "-pix_fmt", "yuv420p", "-an", str(invalid),
         )
-        self.run_cli("validate", "--video", str(invalid), expected_returncode=1)
+        self.run_cli("validate", "--video", str(invalid), "--sheet", str(sheet), expected_returncode=1)
         corrupt = Path(self.temp_dir.name) / "corrupt.mp4"
         corrupt.write_text("not a video", encoding="utf-8")
-        self.run_cli("validate", "--video", str(corrupt), expected_returncode=1)
+        self.run_cli("validate", "--video", str(corrupt), "--sheet", str(sheet), expected_returncode=1)
 
 
 if __name__ == "__main__":
