@@ -48,7 +48,7 @@ cd skills/pr-walkthrough && npm install
 
 Tambien hace falta `ffmpeg` / `ffprobe` en el PATH y Fish Audio MCP (o `FISH_API_KEY`).
 
-`jira-evidence` requiere macOS `qlmanage`, `ffmpeg`, `ffprobe` y un `ffmpeg` con `libx264` en el PATH. No necesita dependencias Python externas.
+`jira-evidence` requiere Node.js 22+ (`npx`), `ffmpeg` y `ffprobe` en el PATH. Renderiza con HyperFrames (`hyperframes@0.8.155`, vía `npx`), que descarga un Chrome headless (~200 MB) a `~/.cache/hyperframes` en el primer render. No necesita dependencias Python externas.
 
 ## Estructura del Proyecto
 

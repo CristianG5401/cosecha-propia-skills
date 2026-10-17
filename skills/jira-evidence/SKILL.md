@@ -25,19 +25,22 @@ Inspect each user-provided raw clip to choose the trim range; use its duration, 
 python3 <skill-dir>/scripts/evidence_video.py inspect --raw raw/AC-1.mp4 --workdir inspection/AC-1
 ```
 
-After the user approves the AC, compose one short clip. The command creates two-second opening/closing cards, trims the approved range, preserves aspect ratio in a padded 1920×1080 frame, outputs 30 fps H.264/yuv420p/faststart without audio, and atomically moves the output only after validation.
+After the user approves the AC, compose one short clip. The command renders two-second opening/closing cards around the approved range with HyperFrames, preserves aspect ratio in a padded 1920×1080 frame, outputs 30 fps H.264/yuv420p/faststart without audio, and atomically moves the output only after validation.
 
 ```bash
 python3 <skill-dir>/scripts/evidence_video.py compose \
   --raw raw/AC-1.mp4 --output AC-1.mp4 --title "AC-1: profile opens" \
   --expected "Profile screen appears" --result PASS --observed "Visible after selection" \
-  --start 12 --end 34
+  --start 12 --end 34 \
+  --callout "14:17:640:300:Click Profile" --highlight "18:22:600:250:500:120"
 python3 <skill-dir>/scripts/evidence_video.py validate --video AC-1.mp4 --sheet inspection/AC-1/final-sheet.jpg
 ```
 
+Use optional, repeatable overlays only to point the reviewer at the proof: `--callout START:END:X:Y:TEXT` shows a label; `--highlight START:END:X:Y:W:H` outlines a box. Times are raw-clip seconds inside `--start`/`--end`; coordinates are raw-clip pixels, the same values you read from `inspect` frames.
+
 `validate` writes a contact sheet of the composed clip's recording, ending just before the closing card. Open it and confirm its last tiles show the guide's **Reviewer must see** result; if they do not, re-compose with a new output name and adjusted `--start`/`--end`. Mark the AC `PASS` only after that check, and paste the exact `compose` command into the manifest.
 
-The helper needs macOS `qlmanage`, `ffmpeg`, `ffprobe`, and `libx264`. It refuses output overwrite, preserves inputs on failure, and warns when final runtime falls outside 20–60 seconds.
+The helper needs Node.js 22+ (`npx`), `ffmpeg`, and `ffprobe`. The first render downloads HyperFrames' headless Chrome (~200 MB) to `~/.cache/hyperframes`. Do not run `hyperframes init`: it installs global agent skills and a Whisper model. The helper refuses output overwrite, preserves inputs on failure, and warns when final runtime falls outside 20–60 seconds.
 
 ## Finish
 

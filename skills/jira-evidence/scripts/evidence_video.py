@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create and verify reviewable Jira evidence videos with local macOS tools."""
+"""Create and verify reviewable Jira evidence videos with ffmpeg and HyperFrames."""
 
 import argparse
 import hashlib
@@ -10,8 +10,8 @@ import shutil
 import subprocess
 import sys
 import tempfile
-import textwrap
 from pathlib import Path
+from string import Template
 
 
 CARD_SECONDS = 2.0
@@ -29,9 +29,9 @@ def tool(name):
     return path
 
 
-def run(args, *, text=True, cwd=None):
+def run(args, *, text=True, cwd=None, env=None):
     try:
-        return subprocess.run(args, check=True, capture_output=True, text=text, cwd=cwd)
+        return subprocess.run(args, check=True, capture_output=True, text=text, cwd=cwd, env=env)
     except subprocess.CalledProcessError as error:
         detail = error.stderr.decode(errors="replace") if isinstance(error.stderr, bytes) else error.stderr
         raise EvidenceError(f"command failed ({Path(args[0]).name}): {detail.strip()[-1000:]}") from error
@@ -124,43 +124,129 @@ def inspect(args):
     print(json.dumps(result, indent=2))
 
 
-def svg_text(value, y, size):
-    lines = textwrap.wrap(
-        value.replace("\x00", ""), width=58, break_long_words=True, break_on_hyphens=False,
-    ) or [" "]
-    return "".join(
-        f'<text x="960" y="{y + index * (size + 18)}" text-anchor="middle" '
-        f'font-family="Arial, sans-serif" font-size="{size}" fill="#ffffff">'
-        f"{html.escape(line, quote=True)}</text>"
-        for index, line in enumerate(lines)
+HYPERFRAMES = "hyperframes@0.8.155"
+FRAME_WIDTH, FRAME_HEIGHT = 1920, 1080
+PAGE = Template("""<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width: 1920px; height: 1080px; overflow: hidden; background: #111827; font-family: Arial, Helvetica, sans-serif; }
+.clip { position: absolute; inset: 0; }
+.card { display: flex; align-items: center; justify-content: center; }
+.panel { width: 1560px; min-height: 720px; max-height: 1000px; overflow: hidden; background: #1f2937; border: 4px solid #3b82f6; border-radius: 24px; color: #fff; text-align: center; padding: 60px 80px; display: flex; flex-direction: column; justify-content: center; gap: 48px; }
+.panel h1 { font-size: 64px; overflow-wrap: anywhere; }
+.panel p { font-size: 42px; overflow-wrap: anywhere; }
+video.clip { width: 1920px; height: 1080px; object-fit: contain; background: #000; }
+.callout, .highlight { inset: auto; z-index: 2; }
+.callout { max-width: 900px; padding: 12px 24px; border-radius: 12px; background: #facc15; color: #111827; font-size: 40px; font-weight: bold; overflow-wrap: anywhere; }
+.highlight { border: 8px solid #facc15; border-radius: 8px; }
+</style>
+</head>
+<body>
+<div id="root" data-composition-id="evidence" data-no-timeline data-start="0" data-duration="$total" data-width="1920" data-height="1080">
+<section id="opening" class="clip card" data-start="0" data-duration="$card"><div class="panel"><h1>$title</h1><p>Expected: $expected</p></div></section>
+<video id="recording" class="clip" src="$src" muted playsinline data-start="$card" data-duration="$body" data-media-start="$start"></video>
+$overlays
+<section id="closing" class="clip card" data-start="$closing" data-duration="$card"><div class="panel"><h1>$result</h1><p>Observed: $observed</p></div></section>
+</div>
+</body>
+</html>
+""")
+
+
+def seconds(value):
+    return f"{value:.3f}"
+
+
+def parse_numbers(values, flag, form):
+    try:
+        numbers = tuple(float(value) for value in values)
+    except ValueError as error:
+        raise EvidenceError(f"{flag} must be {form}") from error
+    start, end = numbers[:2]
+    if start < 0 or end <= start or any(number < 0 for number in numbers[2:]):
+        raise EvidenceError(f"{flag} needs non-negative values with END after START")
+    return numbers
+
+
+def parse_callout(value):
+    parts = value.split(":", 4)
+    if len(parts) != 5 or not parts[4].strip():
+        raise EvidenceError("--callout must be START:END:X:Y:TEXT")
+    return (*parse_numbers(parts[:4], "--callout", "START:END:X:Y:TEXT"), parts[4])
+
+
+def parse_highlight(value):
+    parts = value.split(":")
+    if len(parts) != 6:
+        raise EvidenceError("--highlight must be START:END:X:Y:W:H")
+    numbers = parse_numbers(parts, "--highlight", "START:END:X:Y:W:H")
+    if numbers[4] <= 0 or numbers[5] <= 0:
+        raise EvidenceError("--highlight width and height must be positive")
+    return numbers
+
+
+def fit_frame(width, height):
+    """Scale and offsets that place the raw frame inside the padded 1920x1080 frame."""
+    scale = min(FRAME_WIDTH / width, FRAME_HEIGHT / height)
+    return scale, (FRAME_WIDTH - width * scale) / 2, (FRAME_HEIGHT - height * scale) / 2
+
+
+def require_overlay_fits(flag, overlay, args, raw_report):
+    start, end, x, y = overlay[:4]
+    width, height = (overlay[4], overlay[5]) if flag == "--highlight" else (0, 0)
+    if start < args.start or end > args.end:
+        raise EvidenceError(f"{flag} must fall within --start/--end")
+    if x + width > raw_report["width"] or y + height > raw_report["height"]:
+        raise EvidenceError(f"{flag} must fit within raw source dimensions")
+
+
+def composition_html(*, title, expected, result, observed, video_src, start, end,
+                     raw_width, raw_height, callouts, highlights):
+    scale, offset_x, offset_y = fit_frame(raw_width, raw_height)
+
+    def place(x, y):
+        return f"left:{offset_x + x * scale:.1f}px;top:{offset_y + y * scale:.1f}px"
+
+    def timing(overlay_start, overlay_end):
+        return (
+            f'data-start="{seconds(CARD_SECONDS + overlay_start - start)}" '
+            f'data-duration="{seconds(overlay_end - overlay_start)}"'
+        )
+
+    overlays = [
+        f'<div id="callout-{index}" class="clip callout" style="{place(x, y)}" {timing(t0, t1)}>'
+        f"{html.escape(text, quote=True)}</div>"
+        for index, (t0, t1, x, y, text) in enumerate(callouts, 1)
+    ] + [
+        f'<div id="highlight-{index}" class="clip highlight" '
+        f'style="{place(x, y)};width:{width * scale:.1f}px;height:{height * scale:.1f}px" {timing(t0, t1)}></div>'
+        for index, (t0, t1, x, y, width, height) in enumerate(highlights, 1)
+    ]
+    body = end - start
+    return PAGE.substitute(
+        total=seconds(body + 2 * CARD_SECONDS), card=seconds(CARD_SECONDS), body=seconds(body),
+        closing=seconds(CARD_SECONDS + body), start=seconds(start), src=html.escape(video_src, quote=True),
+        title=html.escape(title, quote=True), expected=html.escape(expected, quote=True),
+        result=html.escape(result, quote=True), observed=html.escape(observed, quote=True),
+        overlays="\n".join(overlays),
     )
 
 
-def write_card_svg(path, heading, lines):
-    body = svg_text(heading, 300, 64)
-    for index, line in enumerate(lines):
-        body += svg_text(line, 470 + index * 125, 42)
-    path.write_text(
-        '<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1920" viewBox="0 0 1920 1920">'
-        '<rect width="1920" height="1080" fill="#111827"/>'
-        '<rect x="180" y="180" width="1560" height="720" rx="24" fill="#1f2937" stroke="#3b82f6" stroke-width="4"/>'
-        f"{body}</svg>",
-        encoding="utf-8",
-    )
-
-
-def render_card(svg, output, tempdir):
-    ql_output = tempdir / f"ql-{svg.stem}"
-    ql_output.mkdir()
-    run([tool("qlmanage"), "-t", "-s", "1920", "-o", str(ql_output), str(svg)])
-    thumbnails = list(ql_output.glob("*.png"))
-    if len(thumbnails) != 1:
-        raise EvidenceError("qlmanage did not create exactly one PNG thumbnail")
-    # qlmanage emits a 1920x1920 preview for SVG; the card lives in its top 1080 px.
+def render_composition(page, raw, video_src, tempdir):
+    project = tempdir / "project"
+    project.mkdir()
+    (project / "index.html").write_text(page, encoding="utf-8")
+    (project / video_src).symlink_to(raw)
+    output = tempdir / "output.mp4"
+    env = os.environ | {"HYPERFRAMES_NO_TELEMETRY": "1", "HYPERFRAMES_SKIP_SKILLS": "1"}
     run([
-        tool("ffmpeg"), "-v", "error", "-i", str(thumbnails[0]), "-vf", "crop=1920:1080:0:0",
-        "-frames:v", "1", "-y", str(output),
-    ])
+        tool("npx"), "--yes", HYPERFRAMES, "render", "--fps", "30", "--video-frame-format", "png",
+        "--frames-cache-dir", str(tempdir / "frames"), "--quiet", "--output", str(output),
+    ], cwd=project, env=env)
+    return output
 
 
 def compose(args):
@@ -173,29 +259,20 @@ def compose(args):
     raw_report = probe_video(raw)
     if args.start < 0 or args.end > raw_report["duration"]:
         raise EvidenceError("trim range must be within the raw video duration")
+    callouts = [parse_callout(value) for value in args.callout]
+    highlights = [parse_highlight(value) for value in args.highlight]
+    for flag, overlays in (("--callout", callouts), ("--highlight", highlights)):
+        for overlay in overlays:
+            require_overlay_fits(flag, overlay, args, raw_report)
+    video_src = f"recording{raw.suffix.lower()}"
+    page = composition_html(
+        title=args.title, expected=args.expected, result=args.result, observed=args.observed,
+        video_src=video_src, start=args.start, end=args.end, raw_width=raw_report["width"],
+        raw_height=raw_report["height"], callouts=callouts, highlights=highlights,
+    )
     output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="jira-evidence-", dir=output.parent) as tmp:
-        tempdir = Path(tmp)
-        opening_svg, closing_svg = tempdir / "opening.svg", tempdir / "closing.svg"
-        opening_png, closing_png = tempdir / "opening.png", tempdir / "closing.png"
-        write_card_svg(opening_svg, args.title, [f"Expected: {args.expected}"])
-        write_card_svg(closing_svg, args.result, [f"Observed: {args.observed}"])
-        render_card(opening_svg, opening_png, tempdir)
-        render_card(closing_svg, closing_png, tempdir)
-        body = (
-            f"trim=start={args.start}:end={args.end},setpts=PTS-STARTPTS,"
-            "fps=30,scale=1920:1080:force_original_aspect_ratio=decrease,"
-            "pad=1920:1080:(ow-iw)/2:(oh-ih)/2,format=yuv420p"
-        )
-        temp_output = tempdir / "output.mp4"
-        run([
-            tool("ffmpeg"), "-v", "error", "-loop", "1", "-t", str(CARD_SECONDS), "-i", str(opening_png),
-            "-i", str(raw), "-loop", "1", "-t", str(CARD_SECONDS), "-i", str(closing_png), "-filter_complex",
-            f"[0:v]fps=30,format=yuv420p[open];[1:v]{body}[body];[2:v]fps=30,format=yuv420p[close];"
-            "[open][body][close]concat=n=3:v=1:a=0[video]",
-            "-map", "[video]", "-an", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-r", "30",
-            "-movflags", "+faststart", str(temp_output),
-        ])
+        temp_output = render_composition(page, raw, video_src, Path(tmp))
         validate_video(temp_output)
         os.replace(temp_output, output)
     duration = probe_video(output)["duration"]
@@ -270,6 +347,8 @@ def parser():
     compose_parser.add_argument("--observed", required=True)
     compose_parser.add_argument("--start", required=True, type=float)
     compose_parser.add_argument("--end", required=True, type=float)
+    compose_parser.add_argument("--callout", action="append", default=[], metavar="START:END:X:Y:TEXT")
+    compose_parser.add_argument("--highlight", action="append", default=[], metavar="START:END:X:Y:W:H")
     compose_parser.set_defaults(func=compose)
     validate_parser = commands.add_parser("validate")
     validate_parser.add_argument("--video", required=True)
