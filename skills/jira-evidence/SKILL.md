@@ -15,7 +15,7 @@ Read the Jira issue **read-only**, or accept pasted acceptance criteria. Propose
 |---|---|---|---|---|
 | AC-1 | `VIDEO` \| `TEST` \| `SOURCE` | `PLANNED` \| `PASS` \| `FAIL` \| `PARTIAL` \| `BLOCKED` | prior ACs | concise reviewer check |
 
-Keep one AC per row. Honor state dependencies: evidence for a later state follows the AC that establishes it. Prefer `TEST` for technical behavior: record the exact command, result summary, and relevant output in the manifest; do not make terminal video. Use `SOURCE` for code/config references. Use `VIDEO` only where visible behavior needs it. User records manually; do not start browser/OS recording.
+Keep one AC per row. Honor state dependencies: evidence for a later state follows the AC that establishes it. Prefer `TEST` for technical behavior: record the exact command, result summary, and relevant output in the manifest; do not make terminal video. Use `SOURCE` for code/config references. Use `VIDEO` only where visible behavior needs it. User records manually; do not start browser/OS recording. Before the user records a `VIDEO` row, read [the recording guide](references/recording-guide.md) and give one guide per AC.
 
 ## Video evidence
 
